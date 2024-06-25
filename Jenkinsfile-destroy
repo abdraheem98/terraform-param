@@ -1,0 +1,56 @@
+pipeline {
+    agent any
+
+    tools {
+        terraform 'terraform'
+    }
+
+    parameters {
+        choice(name: 'TF_VAR_environment', choices: ['dev', 'test', 'uat', 'prod'], description: 'Select Environment')
+    }
+
+    environment {
+        TF_VAR_environment = "${params.TF_VAR_environment}"
+        AWS_ACCESS_KEY_ID = credentials('AWS_ACCESS_KEY_ID')
+        AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                sh 'terraform init'
+            }
+        }
+
+        stage('Terraform Workspace') {
+            steps {
+                script {
+                    def workspaceExists = sh(script: 'terraform workspace select ${TF_VAR_environment} || true', returnStatus: true) == 0
+                    if (!workspaceExists) {
+                        sh "terraform workspace new ${TF_VAR_environment}"
+                    }
+                }
+            }
+        }
+
+        stage('Terraform Destroy') {
+            steps {
+                script {
+                    sh "terraform destroy -var-file='${TF_VAR_environment}.tfvars' -auto-approve"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            deleteDir()
+        }
+    }
+}
